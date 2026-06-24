@@ -150,7 +150,7 @@ jobs:
         with:
           repository: 'ChrisLightfootWild/opentelemetry-php-contrib'
           path: 'shared-contrib'
-          ref: 'poc/shared-ci'
+          ref: 'fix/ci/kafka'
 
       - name: Start MongoDB
         if: ${{ contains(fromJson(inputs.services), 'mongodb') }}
