@@ -8,6 +8,7 @@ use Illuminate\Console\Command as IlluminateCommand;
 use OpenTelemetry\API\Instrumentation\AutoInstrumentation\Context as InstrumentationContext;
 use OpenTelemetry\API\Instrumentation\AutoInstrumentation\HookManagerInterface;
 use OpenTelemetry\API\Trace\Span;
+use OpenTelemetry\API\Trace\StatusCode;
 use OpenTelemetry\API\Trace\TracerInterface;
 use OpenTelemetry\Context\Context;
 use OpenTelemetry\Contrib\Instrumentation\Laravel\Hooks\Hook;
@@ -66,6 +67,10 @@ class Command implements Hook
                 $span->addEvent('command finished', [
                     'exit-code' => $exitCode,
                 ]);
+
+                if ($exitCode !== IlluminateCommand::SUCCESS) {
+                    $span->setStatus(StatusCode::STATUS_ERROR);
+                }
 
                 $this->endSpan($exception);
             }

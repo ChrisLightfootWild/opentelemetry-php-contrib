@@ -100,12 +100,9 @@ final class SymfonyInstrumentation
 
                 $span = Span::fromContext($scope->context());
                 $scope->detach();
-                $span->recordException($exception, [
-                    TraceAttributes::EXCEPTION_ESCAPED => true,
-                ]);
-                if (null !== $response && $response->getStatusCode() >= Response::HTTP_INTERNAL_SERVER_ERROR) {
-                    $span->setStatus(StatusCode::STATUS_ERROR, $exception->getMessage());
-                }
+                $span->recordException($exception);
+                $span->setStatus(StatusCode::STATUS_ERROR, $exception->getMessage());
+                $span->end();
             }
         );
 

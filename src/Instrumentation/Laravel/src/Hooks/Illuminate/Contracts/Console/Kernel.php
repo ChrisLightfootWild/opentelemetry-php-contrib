@@ -53,7 +53,7 @@ class Kernel implements Hook
                 /** @psalm-suppress ArgumentTypeCoercion */
                 $builder = $tracer
                     ->spanBuilder('Artisan handler')
-                    ->setSpanKind(SpanKind::KIND_PRODUCER)
+                    ->setSpanKind(SpanKind::KIND_SERVER)
                     ->setAttribute(CodeAttributes::CODE_FUNCTION_NAME, sprintf('%s::%s', $class, $function))
                     ->setAttribute(CodeAttributes::CODE_FILE_PATH, $filename)
                     ->setAttribute(CodeAttributes::CODE_LINE_NUMBER, $lineno);

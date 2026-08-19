@@ -64,9 +64,10 @@ class Kernel implements Hook
             'handle',
             preHook: function (KernelContract $kernel, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($tracer, $propagator) {
                 $request = ($params[0] instanceof Request) ? $params[0] : null;
+                $method = $request ? $this->httpMethod($request) : 'unknown';
                 /** @psalm-suppress ArgumentTypeCoercion */
                 $builder = $tracer
-                    ->spanBuilder(sprintf('%s', $request?->method() ?? 'unknown'))
+                    ->spanBuilder($method)
                     ->setSpanKind(SpanKind::KIND_SERVER)
                     ->setAttribute(CodeAttributes::CODE_FUNCTION_NAME, sprintf('%s::%s', $class, $function))
                     ->setAttribute(CodeAttributes::CODE_FILE_PATH, $filename)
@@ -77,8 +78,8 @@ class Kernel implements Hook
                     $parent = $propagator->extract($request, HeadersPropagator::instance());
                     $span = $builder
                         ->setParent($parent)
-                        ->setAttribute(UrlAttributes::URL_FULL, $request->fullUrl())
-                        ->setAttribute(HttpAttributes::HTTP_REQUEST_METHOD, $request->method())
+                        ->setAttribute(UrlAttributes::URL_FULL, $this->httpFullUrl($request))
+                        ->setAttribute(HttpAttributes::HTTP_REQUEST_METHOD, $method)
                         ->setAttribute(HttpIncubatingAttributes::HTTP_REQUEST_BODY_SIZE, $request->header('Content-Length'))
                         ->setAttribute(UrlAttributes::URL_SCHEME, $request->getScheme())
                         ->setAttribute(NetworkAttributes::NETWORK_PROTOCOL_VERSION, $request->getProtocolVersion())
@@ -109,7 +110,7 @@ class Kernel implements Hook
                 $route = $request?->route();
 
                 if ($request && $route instanceof Route) {
-                    $span->updateName("{$request->method()} /" . ltrim($route->uri, '/'));
+                    $span->updateName($this->httpMethod($request) . ' /' . ltrim($route->uri, '/'));
                     $span->setAttribute(HttpAttributes::HTTP_ROUTE, $route->uri);
                 }
 
@@ -134,15 +135,37 @@ class Kernel implements Hook
     private function httpTarget(Request $request): string
     {
         $query = $request->getQueryString();
-        $question = $request->getBaseUrl() . $request->getPathInfo() === '/' ? '/?' : '?';
+        $path = $request->getBaseUrl() . $request->getPathInfo();
 
-        return $query ? $request->path() . $question . $query : $request->path();
+        return $query ? $path . '?' . $query : $path;
+    }
+
+    private function httpMethod(Request $request): string
+    {
+        try {
+            return $request->method();
+        } catch (Throwable) {
+            return 'unknown';
+        }
+    }
+
+    private function httpFullUrl(Request $request): string
+    {
+        try {
+            return $request->fullUrl();
+        } catch (Throwable) {
+            return '';
+        }
     }
 
     private function httpHostName(Request $request): string
     {
         if (method_exists($request, 'host')) {
-            return $request->host();
+            try {
+                return $request->host();
+            } catch (Throwable) {
+                return '';
+            }
         }
 
         if (method_exists($request, 'getHost')) {

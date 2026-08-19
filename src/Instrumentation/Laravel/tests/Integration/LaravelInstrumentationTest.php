@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace OpenTelemetry\Tests\Contrib\Instrumentation\Laravel\Integration;
 
 use Exception;
+use Illuminate\Contracts\Http\Kernel as HttpKernel;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use OpenTelemetry\SemConv\Attributes\DbAttributes;
 use OpenTelemetry\SemConv\Attributes\ExceptionAttributes;
+use OpenTelemetry\SemConv\Attributes\ServerAttributes;
 use OpenTelemetry\SemConv\Attributes\UrlAttributes;
+use OpenTelemetry\SemConv\TraceAttributes;
 
 /** @psalm-suppress UnusedClass */
 class LaravelInstrumentationTest extends TestCase
@@ -37,7 +42,7 @@ class LaravelInstrumentationTest extends TestCase
         $span = $this->storage[0];
         $this->assertSame('GET /', $span->getName());
 
-        $response = Http::fake()->get('opentelemetry.io');
+        $response = Http::fake()->get('https://opentelemetry.io');
         $this->assertEquals(200, $response->status());
         $span = $this->storage[1];
         $this->assertSame('GET', $span->getName());
@@ -72,10 +77,12 @@ class LaravelInstrumentationTest extends TestCase
 
         $span = $this->storage[1];
         $this->assertSame('sql SELECT', $span->getName());
-        $this->assertSame('SELECT', $span->getAttributes()->get('db.operation.name'));
-        $this->assertSame(':memory:', $span->getAttributes()->get('db.namespace'));
-        $this->assertSame('select 1', $span->getAttributes()->get('db.query.text'));
-        $this->assertSame('sqlite', $span->getAttributes()->get('db.system.name'));
+        $this->assertSame('SELECT', $span->getAttributes()->get(DbAttributes::DB_OPERATION_NAME));
+        $this->assertSame(':memory:', $span->getAttributes()->get(DbAttributes::DB_NAMESPACE));
+        $this->assertSame('select 1', $span->getAttributes()->get(DbAttributes::DB_QUERY_TEXT));
+        $this->assertSame('sqlite', $span->getAttributes()->get(DbAttributes::DB_SYSTEM_NAME));
+        $this->assertNull($span->getAttributes()->get(ServerAttributes::SERVER_ADDRESS));
+        $this->assertNull($span->getAttributes()->get(ServerAttributes::SERVER_PORT));
 
         /** @var \OpenTelemetry\SDK\Logs\ReadWriteLogRecord $logRecord */
         $logRecord = $this->storage[0];
@@ -116,6 +123,83 @@ class LaravelInstrumentationTest extends TestCase
         $this->assertEquals(Exception::class, $logRecord->getAttributes()->get(ExceptionAttributes::EXCEPTION_TYPE));
         $this->assertEquals('Test exception', $logRecord->getAttributes()->get(ExceptionAttributes::EXCEPTION_MESSAGE));
         $this->assertNotNull($logRecord->getAttributes()->get(ExceptionAttributes::EXCEPTION_STACKTRACE));
+    }
+
+    public function test_url_path_root(): void
+    {
+        $this->router()->get('/', fn () => null);
+        $this->call('GET', '/');
+        $span = $this->storage[0];
+        $this->assertSame('/', $span->getAttributes()->get(TraceAttributes::URL_PATH));
+    }
+
+    public function test_url_path_non_root(): void
+    {
+        $this->router()->get('/hello', fn () => null);
+        $this->call('GET', '/hello');
+        $span = $this->storage[0];
+        $this->assertSame('/hello', $span->getAttributes()->get(TraceAttributes::URL_PATH));
+    }
+
+    public function test_url_path_root_with_query_string(): void
+    {
+        $this->router()->get('/', fn () => null);
+        $this->call('GET', '/?foo=bar');
+        $span = $this->storage[0];
+        $this->assertSame('/?foo=bar', $span->getAttributes()->get(TraceAttributes::URL_PATH));
+    }
+
+    public function test_url_path_with_query_string(): void
+    {
+        $this->router()->get('/hello', fn () => null);
+        $this->call('GET', '/hello?foo=bar');
+        $span = $this->storage[0];
+        $this->assertSame('/hello?foo=bar', $span->getAttributes()->get(TraceAttributes::URL_PATH));
+    }
+
+    public function test_malformed_method_override_header_does_not_break_instrumentation(): void
+    {
+        $this->router()->post('/', fn () => response('ok'));
+
+        // Triggers Symfony's SuspiciousOperationException in getMethod(); see Kernel::httpMethod().
+        $response = $this->call('POST', '/', server: ['HTTP_X_HTTP_METHOD_OVERRIDE' => '__construct']);
+
+        $this->assertSame(200, $response->status());
+        $this->assertCount(1, $this->storage);
+        $span = $this->storage[0];
+        $this->assertSame('POST /', $span->getName());
+    }
+
+    public function test_malformed_host_header_does_not_break_instrumentation(): void
+    {
+        $this->router()->get('/', fn () => response('ok'));
+
+        // `Request::create()`'s URI parsing always overwrites HTTP_HOST, so the
+        // header has to be forced onto the request after construction.
+        $request = Request::create('/');
+        $request->headers->set('HOST', 'evil host!.example.com');
+
+        $response = $this->app->make(HttpKernel::class)->handle($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertCount(1, $this->storage);
+        $span = $this->storage[0];
+        $this->assertSame('', $span->getAttributes()->get(ServerAttributes::SERVER_ADDRESS));
+    }
+
+    public function test_unknown_sql_operation_span_name(): void
+    {
+        $this->router()->get('/pragma', function () {
+            DB::statement('PRAGMA table_info(sqlite_master)');
+
+            return response('ok');
+        });
+
+        $this->call('GET', '/pragma');
+
+        $span = $this->storage[0];
+        $this->assertSame('sql', $span->getName());
+        $this->assertNull($span->getAttributes()->get(DbAttributes::DB_OPERATION_NAME));
     }
 
     private function router(): Router

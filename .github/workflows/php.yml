@@ -29,22 +29,23 @@ jobs:
           'Instrumentation/AwsSdk',
           'Instrumentation/CakePHP',
           'Instrumentation/CodeIgniter',
-          'Instrumentation/Curl',
+          # 'Instrumentation/Curl', Experiment: moved to instrumentation-curl.yml
           'Instrumentation/Doctrine',
           'Instrumentation/ExtAmqp',
-          'Instrumentation/ExtRdKafka',
-          'Instrumentation/Guzzle',
+          # 'Instrumentation/ExtRdKafka', # # Experiment: moved to instrumentation-ext-rdkafka.yml
+          # 'Instrumentation/Guzzle', # Needs a guzzle version matrix: moved to instrumentation-guzzle.yml
           'Instrumentation/HttpAsyncClient',
-          'Instrumentation/HttpConfig',
+          # 'Instrumentation/HttpConfig', # Experiment: moved to instrumentation-httpconfig.yml
           'Instrumentation/IO',
-          'Instrumentation/Laravel',
+          # 'Instrumentation/Laravel', # Experiment: moved to instrumentation-laravel.yml
+          'Instrumentation/Magento2',
           'Instrumentation/MongoDB',
-          'Instrumentation/MySqli',
+          # 'Instrumentation/MySqli', # # Experiment: moved to instrumentation-mysqli.yml
           'Instrumentation/OpenAIPHP',
           'Instrumentation/PDO',
           'Instrumentation/PostgreSql',
           # Sort PSRs numerically.
-          'Instrumentation/Psr3',
+          # 'Instrumentation/Psr3', # Experiment: moved to instrumentation-psr3.yml
           'Instrumentation/Psr6',
           'Instrumentation/Psr14',
           'Instrumentation/Psr15',
@@ -56,6 +57,7 @@ jobs:
           'Instrumentation/Symfony',
           'Instrumentation/Yii',
           'Logs/Monolog',
+          # 'Metrics/Runtime', # Experiment: moved to metrics-runtime.yml
           'Propagation/CloudTrace',
           'Propagation/Instana',
           'Propagation/ServerTiming',
@@ -88,11 +90,17 @@ jobs:
             php-version: 8.1
           - project: 'Instrumentation/Session'
             php-version: 8.1
+          - project: 'Instrumentation/Magento2'
+            php-version: 8.1
+          - project: 'Instrumentation/Magento2'
+            php-version: 8.2
     steps:
-    - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Setup PHP
-      uses: shivammathur/setup-php@44454db4f0199b8b9685a5d763dc37cbf79108e1 # v2
+      uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
       with:
         php-version: ${{ matrix.php-version }}
         coverage: xdebug
@@ -103,7 +111,7 @@ jobs:
 
     - name: Cache Composer packages
       id: composer-cache
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: src/${{ matrix.project }}/vendor
         key: ${{ runner.os }}-${{ matrix.php-version }}-php-${{ hashFiles('**/composer.json') }}
@@ -157,7 +165,7 @@ jobs:
         KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:29092,PLAINTEXT_HOST://localhost:9092 docker compose up  kafka -d --wait
 
     - name: Start Mysql
-      if: ${{ matrix.project == 'Instrumentation/MySqli' }}
+      if: ${{ matrix.project == 'Instrumentation/MySqli' || matrix.project == 'Instrumentation/PDO' }}
       run: |
         docker compose up  mysql -d --wait
 
@@ -175,7 +183,7 @@ jobs:
       run: vendor/bin/phpunit --testsuite integration,unit --coverage-text --coverage-clover=coverage.clover
 
     - name: Code Coverage
-      uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
       # only generate coverage against the latest PHP version
       if: ${{ matrix.php-version == '8.4' }}
       with:

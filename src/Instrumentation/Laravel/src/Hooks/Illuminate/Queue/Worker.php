@@ -10,9 +10,14 @@ use OpenTelemetry\API\Instrumentation\AutoInstrumentation\Context as Instrumenta
 use OpenTelemetry\API\Instrumentation\AutoInstrumentation\HookManagerInterface;
 use OpenTelemetry\API\Trace\Propagation\TraceContextPropagator;
 use OpenTelemetry\API\Trace\Span;
+use OpenTelemetry\API\Trace\SpanBuilderInterface;
 use OpenTelemetry\API\Trace\SpanKind;
 use OpenTelemetry\API\Trace\TracerInterface;
 use OpenTelemetry\Context\Context;
+use OpenTelemetry\Context\ContextInterface;
+use OpenTelemetry\Contrib\Instrumentation\Laravel\Contracts\Queue\TracingIsolated;
+use OpenTelemetry\Contrib\Instrumentation\Laravel\Contracts\Queue\TracingLinked;
+use OpenTelemetry\Contrib\Instrumentation\Laravel\Contracts\Queue\TracingParent;
 use OpenTelemetry\Contrib\Instrumentation\Laravel\Hooks\Hook;
 use OpenTelemetry\Contrib\Instrumentation\Laravel\Hooks\PostHookTrait;
 use OpenTelemetry\Contrib\Instrumentation\Laravel\LaravelConfiguration;
@@ -52,7 +57,7 @@ class Worker implements Hook
                 /** @var Job $job */
                 $job = $params[1];
 
-                $parent = TraceContextPropagator::getInstance()->extract(
+                $parentContext = TraceContextPropagator::getInstance()->extract(
                     $job->payload(),
                 );
 
@@ -60,17 +65,19 @@ class Worker implements Hook
                 $attributes = $this->buildMessageAttributes($queue, $job->getRawBody(), $job->getQueue());
 
                 /** @psalm-suppress ArgumentTypeCoercion */
-                $span = $tracer
+                $spanBuilder = $tracer
                     ->spanBuilder(vsprintf('%s %s', [
                         MessagingIncubatingAttributes::MESSAGING_OPERATION_TYPE_VALUE_PROCESS,
                         $attributes[MessagingIncubatingAttributes::MESSAGING_DESTINATION_NAME],
                     ]))
                     ->setSpanKind(SpanKind::KIND_CONSUMER)
-                    ->setParent($parent)
-                    ->setAttributes($attributes)
-                    ->startSpan();
+                    ->setAttributes($attributes);
 
-                Context::storage()->attach($span->storeInContext($parent));
+                $context = $this->setParentContext($job, $spanBuilder, $parentContext);
+
+                $span = $spanBuilder->startSpan();
+
+                Context::storage()->attach($span->storeInContext($context));
 
                 return $params;
             },
@@ -128,7 +135,9 @@ class Worker implements Hook
 
                 // Discard empty receives.
                 if (!$job) {
+                    $span = Span::fromContext($scope->context());
                     $scope->detach();
+                    $span->end();
 
                     return;
                 }
@@ -146,5 +155,67 @@ class Worker implements Hook
                 $this->endSpan($exception);
             },
         );
+    }
+
+    /**
+     * Set parent context for the span builder, and return the context to be stored.
+     */
+    private function setParentContext($job, SpanBuilderInterface $spanBuilder, ContextInterface|null $parentContext): ContextInterface
+    {
+        /**
+         * No parent context, isolated trace
+         */
+        if ($this->inheritsTracingInterface($job, TracingIsolated::class)) {
+
+            $spanBuilder->setParent(false);
+
+            return Context::getCurrent();
+        }
+
+        /**
+         * No parent, but has link to parent trace
+         */
+        if ($this->inheritsTracingInterface($job, TracingLinked::class) && $parentContext instanceof ContextInterface) {
+
+            $spanBuilder
+                ->setParent(false)
+                ->addLink(Span::fromContext($parentContext)->getContext());
+
+            return Context::getCurrent();
+        }
+
+        /**
+         * Parent context, normal trace, default behavior
+         */
+        if ($this->inheritsTracingInterface($job, TracingParent::class) || $parentContext instanceof ContextInterface) {
+
+            $spanBuilder->setParent($parentContext);
+
+            return $parentContext ?? Context::getCurrent();
+        }
+
+        return Context::getCurrent();
+    }
+
+    /**
+     * Determine if a job inherits from a specific tracing interface.
+     *
+     * @param class-string $interface
+     */
+    private function inheritsTracingInterface(Job $job, string $interface): bool
+    {
+        try {
+            /**
+             * We use $job->resolveName() which is the idiomatic Laravel way to get
+             * the underlying job class name (handling both queued paths and plain jobs).
+             *
+             * @var class-string $className
+             */
+            $className = $job->resolveName();
+
+            return is_a($className, $interface, true);
+        } catch (Throwable) {
+            return false;
+        }
     }
 }

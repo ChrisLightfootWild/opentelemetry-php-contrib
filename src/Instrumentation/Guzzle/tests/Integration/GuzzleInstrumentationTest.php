@@ -87,7 +87,7 @@ class GuzzleInstrumentationTest extends TestCase
     /**
      * @dataProvider methodProvider
      */
-    public function test_magic_methods(string $method, string $expected): void
+    public function test_helper_methods(string $method, string $expected): void
     {
         $this->mock->append(new Response());
         $this->assertCount(0, $this->storage);
@@ -105,7 +105,7 @@ class GuzzleInstrumentationTest extends TestCase
     /**
      * @dataProvider methodProvider
      */
-    public function test_magic_methods_async(string $method, string $expected): void
+    public function test_helper_methods_async(string $method, string $expected): void
     {
         $this->mock->append(new Response());
         $promise = $this->client->{$method . 'Async'}('/');
@@ -121,17 +121,36 @@ class GuzzleInstrumentationTest extends TestCase
         $this->assertSame(200, $span->getAttributes()->get(TraceAttributes::HTTP_RESPONSE_STATUS_CODE));
     }
 
+    /**
+     * Guzzle 8 removed Client::__call(), so only the methods declared on
+     * ClientTrait are covered here. OPTIONS is covered by test_request_methods().
+     */
     public static function methodProvider(): array
     {
         return [
             'delete' => ['delete', 'DELETE'],
             'get' => ['get', 'GET'],
             'head' => ['head', 'HEAD'],
-            'options' => ['options', 'OPTIONS'],
             'patch' => ['patch', 'PATCH'],
             'post' => ['post', 'POST'],
             'put' => ['put', 'PUT'],
         ];
+    }
+
+    public function test_request_methods(): void
+    {
+        $this->mock->append(new Response());
+        $this->client->request('OPTIONS', '/foo');
+        $this->mock->append(new Response());
+        $this->client->requestAsync('OPTIONS', '/foo')->wait();
+
+        $this->assertCount(2, $this->storage);
+        foreach ($this->storage as $span) {
+            assert($span instanceof ImmutableSpan);
+            $this->assertSame('OPTIONS', $span->getAttributes()->get(TraceAttributes::HTTP_REQUEST_METHOD));
+            $this->assertSame('/foo', $span->getAttributes()->get(TraceAttributes::URL_PATH));
+            $this->assertSame(200, $span->getAttributes()->get(TraceAttributes::HTTP_RESPONSE_STATUS_CODE));
+        }
     }
 
     public function test_concurrent_async(): void
@@ -252,6 +271,33 @@ class GuzzleInstrumentationTest extends TestCase
         }
     }
 
+    /**
+     * @link https://github.com/open-telemetry/opentelemetry-php/issues/1988
+     */
+    public function test_post_hook_when_transfer_throws_synchronously(): void
+    {
+        $this->assertCount(0, $this->storage);
+
+        // A numerically-indexed "headers" option makes Client::applyOptions()
+        // throw InvalidArgumentException synchronously inside transfer(), before
+        // a promise is returned. send()/sendAsync() must be used here: the get()
+        // magic method routes through requestAsync(), which unsets the headers
+        // option before transfer() is called, so applyOptions() never sees it.
+        $request = new Request('GET', 'https://example.com/foo');
+
+        try {
+            $this->client->send($request, ['headers' => ['invalid']]);
+            $this->fail('Expected InvalidArgumentException was not thrown');
+        } catch (\InvalidArgumentException $e) {
+            // expected
+        }
+
+        $this->assertCount(1, $this->storage);
+        $span = $this->storage->offsetGet(0);
+        assert($span instanceof ImmutableSpan);
+        $this->assertSame(StatusCode::STATUS_ERROR, $span->getStatus()->getCode());
+    }
+
     public static function exceptionProvider(): array
     {
         return [
@@ -261,6 +307,63 @@ class GuzzleInstrumentationTest extends TestCase
             '503 Service Unavailable' => [new Response(503, [], 'Service Unavailable'), 503],
             'network connection error' => [new ConnectException('network error', new Request('GET', 'https://example.com/error'))],
             'runtime exception' => [new \RuntimeException('runtime error')],
+        ];
+    }
+
+    /**
+     * @dataProvider requestHeadersEnvProvider
+     */
+    public function test_capture_request_headers(string $envVar): void
+    {
+        putenv(sprintf('%s=x-custom-header,accept', $envVar));
+
+        try {
+            $this->mock->append(new Response());
+            $request = new Request('GET', 'https://example.com/foo', ['x-custom-header' => 'my-value', 'accept' => 'application/json']);
+            $this->client->send($request);
+
+            $span = $this->storage->offsetGet(0);
+            assert($span instanceof ImmutableSpan);
+            $this->assertSame(['my-value'], $span->getAttributes()->get('http.request.header.x-custom-header'));
+            $this->assertSame(['application/json'], $span->getAttributes()->get('http.request.header.accept'));
+        } finally {
+            putenv($envVar);
+        }
+    }
+
+    public static function requestHeadersEnvProvider(): array
+    {
+        return [
+            'standardized' => ['OTEL_INSTRUMENTATION_HTTP_CLIENT_CAPTURE_REQUEST_HEADERS'],
+            'legacy' => ['OTEL_PHP_INSTRUMENTATION_HTTP_REQUEST_HEADERS'],
+        ];
+    }
+
+    /**
+     * @dataProvider responseHeadersEnvProvider
+     */
+    public function test_capture_response_headers(string $envVar): void
+    {
+        putenv(sprintf('%s=x-custom-header,content-type', $envVar));
+
+        try {
+            $this->mock->append(new Response(200, ['x-custom-header' => 'my-value', 'content-type' => 'application/json']));
+            $this->client->get('/foo');
+
+            $span = $this->storage->offsetGet(0);
+            assert($span instanceof ImmutableSpan);
+            $this->assertSame(['my-value'], $span->getAttributes()->get('http.response.header.x-custom-header'));
+            $this->assertSame(['application/json'], $span->getAttributes()->get('http.response.header.content-type'));
+        } finally {
+            putenv($envVar);
+        }
+    }
+
+    public static function responseHeadersEnvProvider(): array
+    {
+        return [
+            'standardized' => ['OTEL_INSTRUMENTATION_HTTP_CLIENT_CAPTURE_RESPONSE_HEADERS'],
+            'legacy' => ['OTEL_PHP_INSTRUMENTATION_HTTP_RESPONSE_HEADERS'],
         ];
     }
 }
