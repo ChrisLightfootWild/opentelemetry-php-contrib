@@ -14,7 +14,10 @@ use OpenTelemetry\API\Trace\SpanInterface;
 use OpenTelemetry\API\Trace\SpanKind;
 use OpenTelemetry\API\Trace\StatusCode;
 use OpenTelemetry\API\Trace\TracerInterface;
-use OpenTelemetry\SemConv\TraceAttributes;
+use OpenTelemetry\SemConv\Attributes\HttpAttributes;
+use OpenTelemetry\SemConv\Attributes\ServerAttributes;
+use OpenTelemetry\SemConv\Attributes\UrlAttributes;
+use OpenTelemetry\SemConv\Incubating\Attributes\HttpIncubatingAttributes;
 use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class ClientRequestWatcher extends Watcher
@@ -57,12 +60,12 @@ class ClientRequestWatcher extends Watcher
             ->spanBuilder($request->request->method())
             ->setSpanKind(SpanKind::KIND_CLIENT)
             ->setAttributes([
-                TraceAttributes::HTTP_REQUEST_METHOD => $request->request->method(),
-                TraceAttributes::URL_FULL => $processedUrl,
-                TraceAttributes::URL_PATH => $parsedUrl['path'] ?? null,
-                TraceAttributes::URL_SCHEME => $parsedUrl['scheme'] ?? null,
-                TraceAttributes::SERVER_ADDRESS => $parsedUrl['host'] ?? null,
-                TraceAttributes::SERVER_PORT => $parsedUrl['port'] ?? null,
+                HttpAttributes::HTTP_REQUEST_METHOD => $request->request->method(),
+                UrlAttributes::URL_FULL => $processedUrl,
+                UrlAttributes::URL_PATH => $parsedUrl['path'] ?? null,
+                UrlAttributes::URL_SCHEME => $parsedUrl['scheme'] ?? null,
+                ServerAttributes::SERVER_ADDRESS => $parsedUrl['host'] ?? null,
+                ServerAttributes::SERVER_PORT => $parsedUrl['port'] ?? null,
             ])
             ->startSpan();
         $this->spans[$this->createRequestComparisonHash($request->request)] = $span;
@@ -95,8 +98,8 @@ class ClientRequestWatcher extends Watcher
         }
 
         $span->setAttributes([
-            TraceAttributes::HTTP_RESPONSE_STATUS_CODE => $request->response->status(),
-            TraceAttributes::HTTP_RESPONSE_BODY_SIZE => $request->response->header('Content-Length'),
+            HttpAttributes::HTTP_RESPONSE_STATUS_CODE => $request->response->status(),
+            HttpIncubatingAttributes::HTTP_RESPONSE_BODY_SIZE => $request->response->header('Content-Length'),
         ]);
 
         $this->maybeRecordError($span, $request->response);

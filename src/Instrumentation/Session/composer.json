@@ -11,7 +11,7 @@
 	"ext-opentelemetry": "*",
         "ext-session": "*",
         "open-telemetry/api": "^1.0",
-        "open-telemetry/sem-conv": "^1.0"
+        "open-telemetry/sem-conv": "^1.36"
     },
     "autoload": {
         "psr-4": {
@@ -20,7 +20,7 @@
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3",
-        "phan/phan": "^5.0",
+        "phan/phan": "^6.0",
         "php-http/mock-client": "*",
         "phpstan/phpstan": "^1.1",
         "phpstan/phpstan-phpunit": "^1.0",

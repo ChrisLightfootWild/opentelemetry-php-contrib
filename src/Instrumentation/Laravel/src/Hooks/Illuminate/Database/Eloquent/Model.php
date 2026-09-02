@@ -15,6 +15,7 @@ use OpenTelemetry\Contrib\Instrumentation\Laravel\Hooks\PostHookTrait;
 use OpenTelemetry\Contrib\Instrumentation\Laravel\LaravelConfiguration;
 use OpenTelemetry\Contrib\Instrumentation\Laravel\LaravelInstrumentation;
 use OpenTelemetry\SemConv\Attributes\CodeAttributes;
+use OpenTelemetry\SemConv\Attributes\DbAttributes;
 use OpenTelemetry\SemConv\Version;
 use Throwable;
 
@@ -176,7 +177,7 @@ class Model implements Hook
                     ->setAttribute('laravel.eloquent.model', $model::class)
                     ->setAttribute('laravel.eloquent.table', $model->getTable())
                     ->setAttribute('laravel.eloquent.operation', 'get')
-                    ->setAttribute('db.statement', $builder->getQuery()->toSql());
+                    ->setAttribute(DbAttributes::DB_QUERY_TEXT, $builder->getQuery()->toSql());
 
                 $parent = Context::getCurrent();
                 $span = $builder->startSpan();
