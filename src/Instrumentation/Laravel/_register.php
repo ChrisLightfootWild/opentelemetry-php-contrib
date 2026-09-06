@@ -11,8 +11,8 @@ use Nevay\SPI\ServiceLoader;
 use OpenTelemetry\API\Configuration\Config\ComponentProvider;
 use OpenTelemetry\API\Configuration\ConfigEnv\EnvComponentLoader;
 use OpenTelemetry\API\Instrumentation\AutoInstrumentation\Instrumentation;
-use OpenTelemetry\Contrib\Instrumentation\Laravel\ComponentLoader\LaravelComponentLoader;
-use OpenTelemetry\Contrib\Instrumentation\Laravel\ComponentProvider\LaravelComponentProvider;
+use OpenTelemetry\Contrib\Instrumentation\Laravel\Configuration\Config\LaravelComponentProvider;
+use OpenTelemetry\Contrib\Instrumentation\Laravel\Configuration\ConfigEnv\LaravelComponentLoader;
 use OpenTelemetry\Contrib\Instrumentation\Laravel\Hooks;
 use OpenTelemetry\Contrib\Instrumentation\Laravel\LaravelInstrumentation;
 

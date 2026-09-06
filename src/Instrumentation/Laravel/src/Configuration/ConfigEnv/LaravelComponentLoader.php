@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace OpenTelemetry\Contrib\Instrumentation\Laravel\ComponentLoader;
+namespace OpenTelemetry\Contrib\Instrumentation\Laravel\Configuration\ConfigEnv;
 
 use function in_array;
 use OpenTelemetry\API\Configuration\ConfigEnv\EnvComponentLoader;
