@@ -45,7 +45,7 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
 
         <server name="OTEL_PHP_AUTOLOAD_ENABLED" value="true"/>
-        <server name="OTEL_EXPERIMENTAL_CONFIG_FILE" value="tests/Fixtures/otel-instrumentation.yaml"/>
+        <server name="OTEL_CONFIG_FILE" value="tests/Fixtures/otel-instrumentation.yaml"/>
     </php>
 
     <testsuites>
